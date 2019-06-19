@@ -5,7 +5,7 @@
  *phase change
  * 
  */
-
+int j = 0;
 
 // led timer
 unsigned long previousMillis = 1000; 
@@ -20,7 +20,7 @@ const int Yellow = 12;
 // averaging filter
 float Voltage;
 float AverageVoltage = 0;
-int MeasurementsToAverage = 50;
+int MeasurementsToAverage = 5;
 
 // averaging filter 2
 float AverageVoltage2 = 0;
@@ -30,9 +30,9 @@ int MeasurementsToAverage2 = 16;
 float CompressedVoltage = 0;
 
 // duty cycle
-int MaxVoltage = 87;
-int MinVoltage = 83;
-float MediumVoltage = 85;
+int MaxVoltage = 330;
+int MinVoltage = 310;
+float MediumVoltage = 260;
 float Threshold = MediumVoltage;
 float PercentMax = 50; 
 float PercentMin = 50;
@@ -54,6 +54,8 @@ void setup() {
 }
 
 void loop() {
+
+  j++;
   
   digitalWrite(Yellow,HIGH);
   Voltage = analogRead(Signal);
@@ -67,7 +69,7 @@ void loop() {
   AverageVoltage /= MeasurementsToAverage;         
 
   // compressor function reduces outlier voltage spikes  
-  compressor();
+     compressor();
 
   // averaging filter 2
   for(int i = 0; i < MeasurementsToAverage2; ++i)   
@@ -78,28 +80,20 @@ void loop() {
   AverageVoltage2 /= MeasurementsToAverage;   
 
   // turns on light once a cycle
-  if ((AverageVoltage2 > Threshold) &&  millis() - previousMillis >= interval){                      
-      digitalWrite(Green,HIGH);
+  if ((AverageVoltage > Threshold) &&  millis() - previousMillis >= interval){                      
+      j = 0;
       previousMillis = millis();
-      delay(500);   
-      digitalWrite(Green,LOW); 
-  //    unsigned long currentMillis = millis(); 
-    //  if (currentMillis - previousMillis >= interval) {
-     // previousMillis = currentMillis;
-      //digitalWrite(Green,LOW); // turn led off
   }
-  
-   // eliminates random 0V and ∞V readings due to code errors
-   if (CompressedVoltage > 275) {
-      CompressedVoltage = 275;
-     }
-   if (CompressedVoltage < 245){
-      CompressedVoltage = 245;
-    }
-  Serial.println(AverageVoltage2);
-  digitalWrite(Yellow,LOW);
-}
 
+  if (j == 15) {
+    digitalWrite(Green,HIGH);
+  }
+  Serial.println(AverageVoltage);
+
+  if (j > 20) {
+    digitalWrite(Green,LOW);
+  }
+}
 // compressor function
 void compressor() {
 
