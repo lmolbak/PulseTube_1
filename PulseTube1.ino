@@ -6,6 +6,7 @@
  * 
  */
 int j = 0;
+boolean TurnOn = true;
 
 // led timer
 unsigned long previousMillis = 1000; 
@@ -83,14 +84,16 @@ void loop() {
   if ((AverageVoltage > Threshold) &&  millis() - previousMillis >= interval){                      
       j = 0;
       previousMillis = millis();
+      TurnOn = true;
   }
 
-  if (j == 15) {
+  if ((millis() - previousMillis > 350) && TurnOn) {
     digitalWrite(Green,HIGH);
+    TurnOn = false;
   }
   Serial.println(AverageVoltage);
 
-  if (j > 20) {
+  if (millis() - previousMillis > 550) {
     digitalWrite(Green,LOW);
   }
 }
