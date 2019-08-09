@@ -1,27 +1,34 @@
-/* Goals
- * 
- *fake spikes
- *duty cycle
- *phase change
- * 
- */
-int j = 0;
+
+#include <Array.h>
+
+//pwm
+int pwm = 0;
+boolean pwmOn = false;
+
+// deciding when to turn heater on and off
+int LeftBound = 0;
+int RightBound = 200;
 boolean TurnOn = true;
+int PhaseShift;
+int DutyCycle;
 
 // led timer
 unsigned long previousMillis = 1000; 
 long currentMillis = 0;
 const long interval = 500; 
+int Threshold = 0; // where the timer starts; syncs fridge's signal with heater's
 
 // ports
 const int Signal = A0; 
-const int Green = 13;
-const int Yellow = 12;
+const int Green = 11;
+const int PotOne = A1;
+const int PotTwo = A2;
+const int PotThree = A3;
 
 // averaging filter
 float Voltage;
 float AverageVoltage = 0;
-int MeasurementsToAverage = 5;
+int MeasurementsToAverage = 16;
 
 // averaging filter 2
 float AverageVoltage2 = 0;
@@ -30,134 +37,115 @@ int MeasurementsToAverage2 = 16;
 // compression 
 float CompressedVoltage = 0;
 
-// duty cycle
-int MaxVoltage = 330;
-int MinVoltage = 310;
-float MediumVoltage = 260;
-float Threshold = MediumVoltage;
-float PercentMax = 50; 
-float PercentMin = 50;
-
-// phase change
-boolean PhaseInvert = false;
-int PhaseShift = 0;
-
+int VoltageVal[500];
+int i = 0;
+int MaxVoltage = 0;
+int MinVoltage = 0;
 
 void setup() {
   Serial.begin(9600);
-  
+
   pinMode(Signal,INPUT);
   pinMode(Green,OUTPUT);
-  pinMode(Yellow,OUTPUT);
+  pinMode(PotOne,INPUT);
+  pinMode(PotTwo,INPUT);
+  pinMode(PotThree, INPUT);
 
-//duty cycle
-  Threshold = (MaxVoltage * (PercentMax/100)) + (MinVoltage * (PercentMin/100)); 
 }
 
 void loop() {
-
-  j++;
   
-  digitalWrite(Yellow,HIGH);
   Voltage = analogRead(Signal);
-
+  
   // averaging filter
-   for(int i = 0; i < MeasurementsToAverage; ++i)   
+  average();       
+
+  /*  finds the signal threshold  
+   *  1) determine the peak voltages (excluding outliers)
+   *  2) calculate their average
+   */ 
+  VoltageVal[i] = AverageVoltage;
+  if (MaxVoltage == 0) {
+    MaxVoltage = VoltageVal[i];
+  }
+  if (MinVoltage == 0) {
+    MinVoltage = VoltageVal[i];
+  }
+  if (AverageVoltage > MaxVoltage && AverageVoltage < (MaxVoltage * 1.2)) {
+    MaxVoltage = VoltageVal[i];
+  }
+  if (AverageVoltage < MinVoltage && AverageVoltage > (MinVoltage / 1.2)) {
+    MinVoltage = VoltageVal[i];
+  }
+  Threshold = (MaxVoltage + MinVoltage)/2;
+  
+  //graphs voltage vs. time in the plotter 
+  Serial.println(Voltage);
+
+  
+
+  // compressor function reduces outlier voltage spikes  
+ // compressor();
+
+  // averaging filter 2
+ // average2();
+
+  // reads the potentiometer position and makes it a usable integer for our purposes
+  PhaseShift = analogRead(PotOne);           // 0-600
+  PhaseShift = map(PhaseShift, 0, 1023, 0, 500);
+  DutyCycle = analogRead(PotTwo);          // 50-650
+  DutyCycle = map(DutyCycle, 0, 1023, 50, 650);
+  //DutyCycle = 200;
+
+  pwm = analogRead(PotThree);
+  pwm = map(pwm, 0, 1023, 0, 255);
+   //  analogWrite(Green, pwm);
+  
+  //prevents user from overlapping cycles (we want the heater to turn on once during each period)
+  RightBound = DutyCycle + PhaseShift;
+  if (RightBound > 650) {
+      RightBound = 650;
+  }
+
+   // records the time when the voltage crosses the threshold
+  if ((AverageVoltage > Threshold) &&  millis() - previousMillis >= interval){                      
+      previousMillis = millis();
+      TurnOn = true;
+  }
+    
+  // sends voltage from arduino after an amount of time (determined by PhaseShift) has ellapsed
+  if ((millis() - previousMillis > LeftBound + PhaseShift) && TurnOn) {   
+//X   analogWrite(Green, pwm);
+   digitalWrite(Green,HIGH);
+     TurnOn = false;
+  }
+
+  // stops sending voltage after an amount of time (determined by DutyCycle) has ellapsed
+  if (millis() - previousMillis > RightBound) {
+    digitalWrite(Green,LOW);
+
+   
+
+    i++;
+  }
+}
+
+// averaging filter functions
+void average() {
+  for(int p = 0; p < MeasurementsToAverage; ++p)   
   {                                               
     AverageVoltage += Voltage;                    
     delay(1);                                      
   }                                                 
-  AverageVoltage /= MeasurementsToAverage;         
+  AverageVoltage /= MeasurementsToAverage; 
+}
 
-  // compressor function reduces outlier voltage spikes  
-     compressor();
 
-  // averaging filter 2
-  for(int i = 0; i < MeasurementsToAverage2; ++i)   
+void average2() {
+  for(int q = 0; q < MeasurementsToAverage2; ++q)   
   {                                               
     AverageVoltage2 += CompressedVoltage;                    
     delay(1);                                      
   }                                                 
-  AverageVoltage2 /= MeasurementsToAverage;   
-
-  // turns on light once a cycle
-  if ((AverageVoltage > Threshold) &&  millis() - previousMillis >= interval){                      
-      j = 0;
-      previousMillis = millis();
-      TurnOn = true;
-  }
-
-  if ((millis() - previousMillis > 350) && TurnOn) {
-    digitalWrite(Green,HIGH);
-    TurnOn = false;
-  }
-  Serial.println(AverageVoltage);
-
-  if (millis() - previousMillis > 550) {
-    digitalWrite(Green,LOW);
-  }
+  AverageVoltage2 /= MeasurementsToAverage; 
 }
-// compressor function
-void compressor() {
-
-  int CompValues[] = {250,251,252,253,254,255,256,257,258,259,260,
-                      261,262,263,264,265,266,267,268,269,270,271};
- 
-  if (AverageVoltage >= CompValues[21]) {
-     CompressedVoltage = (CompValues[18] + ((AverageVoltage - CompValues[18]) * .2));
-  }
-  else if (AverageVoltage >= CompValues[20]) {
-     CompressedVoltage = (CompValues[18] + ((AverageVoltage - CompValues[18]) * .2));
-  }
-  else if (AverageVoltage >= CompValues[19]) {
-     CompressedVoltage = (CompValues[18] + ((AverageVoltage - CompValues[18]) * 1));
-  }
-  else if (AverageVoltage >= CompValues[18]) {
-     CompressedVoltage = (CompValues[17] + ((AverageVoltage - CompValues[17]) * 1.7));
-  }
-  else if (AverageVoltage >= CompValues[17]) {
-     CompressedVoltage = (CompValues[16] + ((AverageVoltage - CompValues[16]) * 1.7));
-  }
-  else if (AverageVoltage <= CompValues[0]) {
-     CompressedVoltage = (CompValues[3] - ((CompValues[3] - AverageVoltage) * .2));
-  }
-  else if (AverageVoltage <= CompValues[1]) {
-     CompressedVoltage = (CompValues[3] - ((CompValues[3] - AverageVoltage) * .2));
-  }
-  else if (AverageVoltage <= CompValues[2]) {
-     CompressedVoltage = (CompValues[3] - ((CompValues[3] - AverageVoltage) * 1));
-  }
-  else if (AverageVoltage <= CompValues[3]) {
-     CompressedVoltage = (CompValues[4] - ((CompValues[4] - AverageVoltage) * 1.5));
-  }
-  else if (AverageVoltage <= CompValues[4]) {
-     CompressedVoltage = (CompValues[5] - ((CompValues[5] - AverageVoltage) * 2));
-  }
-  else if (AverageVoltage <= CompValues[5]) {
-     CompressedVoltage = (CompValues[6] - ((CompValues[6] - AverageVoltage) * 2));
-  }
-  else if (AverageVoltage <= CompValues[6]) {
-     CompressedVoltage = (CompValues[7] - ((CompValues[7] - AverageVoltage) * 2));
-  }
-  else if (AverageVoltage <= CompValues[7]) {
-     CompressedVoltage = (CompValues[8] - ((CompValues[8] - AverageVoltage) * 2));
-  }
-  else {
-    CompressedVoltage = AverageVoltage;
-  }
-}
-  
-
-
-
-
-
-/*
-else if (voltage > 100 && voltage < 200) {
-digitalWrite(Yellow,HIGH);
-digitalWrite(Green,LOW);
-digitalWrite(Red,LOW);
-  }
-else if (voltage < 30 && voltage > 0)
-digitalWrite(Red,HIGH);
-*/
